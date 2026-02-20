@@ -8,6 +8,7 @@ import Home from "@/pages/Home";
 import FlightAnalysis from "@/pages/FlightAnalysis";
 import Predict from "@/pages/Predict";
 import Analytics from "@/pages/Analytics";
+import ImportFlights from "@/pages/ImportFlights";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/flights" component={() => <FlightAnalysis />} /> {/* Fallback default */}
       <Route path="/predict" component={Predict} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/import" component={ImportFlights} />
       <Route component={NotFound} />
     </Switch>
   );
