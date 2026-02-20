@@ -4,10 +4,11 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db } from "./db";
-import { flights, gates } from "@shared/schema";
+import { flights, gates, alerts } from "@shared/schema";
 import { sql, avg, count, sum, eq } from "drizzle-orm";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
+
 
 // Helper function for normal distribution
 function randomNormal(mean: number, stdDev: number): number {
@@ -163,7 +164,7 @@ export async function registerRoutes(
       const created: any[] = [];
 
       for (let i = 0; i < records.length; i++) {
-        const row = records[i];
+        const row = records[i] as Record<string, string>;;
         const rowNum = i + 2;
 
         try {
@@ -387,6 +388,47 @@ export async function registerRoutes(
     } catch (err) {
       console.error("Analytics error:", err);
       res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
+  // ── Alerts ──────────────────────────────────────────────
+  app.get("/api/alerts", async (req, res) => {
+    try {
+      const active = await db
+        .select()
+        .from(alerts)
+        .where(eq(alerts.acknowledged, false));
+      res.json(active);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  app.patch("/api/alerts/:id/acknowledge", async (req, res) => {
+    try {
+      await db
+        .update(alerts)
+        .set({ acknowledged: true })
+        .where(eq(alerts.id, Number(req.params.id)));
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to acknowledge alert" });
+    }
+  });
+
+  app.post("/api/alerts/seed", async (req, res) => {
+    try {
+      const alert = await db.insert(alerts).values({
+        flightNumber: "6E-412",
+        gate: 1,
+        bottleneck: "Catering",
+        tatBloat: 18,
+        penaltyRisk: 97200,
+        severity: "critical",
+      }).returning();
+      res.json(alert[0]);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to seed alert" });
     }
   });
 
