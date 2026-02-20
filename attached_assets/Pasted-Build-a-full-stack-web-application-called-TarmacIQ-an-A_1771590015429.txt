@@ -1,0 +1,170 @@
+Build a full-stack web application called "TarmacIQ" — an AI-powered 
+Ground Operations Intelligence Platform for airline turnaround management.
+
+TECH STACK:
+- Frontend: React + Tailwind CSS
+- Backend: Python (Flask)
+- Charts: Recharts or Chart.js
+- Color Theme: Deep navy (#0a0f1e) background, electric blue (#00aaff) 
+  accents, amber (#f59e0b) for warnings, red (#ef4444) for critical alerts. 
+  Clean white text. Premium dark dashboard aesthetic.
+
+---
+
+THE PROBLEM THIS SOLVES:
+IndiGround Services manages 8 gates at a regional hub. Ground ops teams 
+(fuel, baggage, catering) work in silos causing Turnaround Time (TAT) bloat. 
+Every minute of delay = ₹5,400 in penalties. TarmacIQ predicts TAT, detects 
+bottlenecks, and quantifies financial risk before the flight even lands.
+
+---
+
+PAGE 1 — LIVE OPS DASHBOARD (main page)
+
+Header:
+- TarmacIQ logo (airplane icon) on top left
+- Current date/time (live clock) top right
+- Subtitle: "Ground Operations Intelligence Platform"
+
+Section 1 — Gate Map (8 gates displayed as cards in a 4x2 grid):
+Each gate card shows:
+  - Gate number (G1 to G8)
+  - Flight ID (e.g. 6E-204)
+  - Airline name
+  - Status badge: ACTIVE (blue) / CLEARING (amber) / FREE (green)
+  - Predicted TAT (e.g. "47 min")
+  - Bottleneck flag: which resource needs immediate action
+    → BAGGAGE 🧳 (red badge) / FUEL ⛽ (amber badge) / CATERING 🍽️ (blue badge)
+  - Penalty risk: ₹ amount in red if delay predicted
+  - A mini horizontal progress bar showing time elapsed vs predicted TAT
+
+Section 2 — Incoming Flight Panel (right sidebar or below gate map):
+Table of next 5 incoming flights showing:
+  - Flight ID, Airline, ETA, Aircraft Type, Predicted TAT, Risk Level
+
+Section 3 — Penalty Summary Bar (top of page, full width):
+  - Total predicted penalty across all active gates (₹ amount, large font)
+  - Color coded: green < ₹50K, amber ₹50K–₹2L, red > ₹2L
+
+---
+
+PAGE 2 — FLIGHT ANALYSIS (click any flight or gate to open)
+
+Left Panel — Flight Details:
+  - Flight ID, Airline, Aircraft Type
+  - Arrival Time, Predicted TAT, Target TAT (35 min narrow / 60 min wide body)
+  - Arrival Delay input field (user can adjust and re-run prediction)
+
+Center Panel — Sub-Process Breakdown:
+  Horizontal stacked bar chart showing:
+  - Baggage Duration (% of TAT) — color coded
+  - Fuel Duration (% of TAT)
+  - Catering Duration (% of TAT)
+  - Safety Check (% of TAT)
+  With a bold label: "BOTTLENECK: BAGGAGE — Expedite to save ₹91,800"
+
+Right Panel — Monte Carlo Results:
+  - Bell curve / histogram chart of 1000 simulated TAT outcomes
+  - Three vertical lines marking P50, P75, P90
+  - Table below:
+    | Scenario | TAT | Penalty |
+    | P50 (Expected) | 47 min | ₹32,400 |
+    | P75 (Moderate Risk) | 54 min | ₹67,500 |
+    | P90 (Worst Case) | 63 min | ₹1,21,500 |
+  - Bottleneck consistency: "Baggage is bottleneck in 73% of simulations"
+
+---
+
+PAGE 3 — HISTORICAL ANALYTICS
+
+- Line chart: Average TAT per day over past 30 days
+- Bar chart: Bottleneck frequency (Baggage vs Fuel vs Catering — which caused 
+  most delays historically)
+- Heatmap: Gate utilization by hour of day (8 gates × 24 hours)
+- KPI cards: Avg TAT, Total Penalties This Month, Most Delayed Airline, 
+  Peak Delay Hour
+
+---
+
+PAGE 4 — PREDICTION INPUT (manual flight entry)
+
+Form with fields:
+  - Flight ID (text)
+  - Airline (dropdown: IndiGo, Air India, SpiceJet, GoFirst, Vistara)
+  - Aircraft Type (auto-filled from airline: Narrow/Wide body)
+  - Arrival Time (datetime picker)
+  - Arrival Delay in minutes (number input)
+  - Fuel Liters (number)
+  - Bags Count (number)
+  - Priority Bags (number)
+  - Meals Qty (number)
+  - Special Meals (number)
+  - Catering Required (toggle)
+  - Safety Check (toggle)
+
+On clicking "PREDICT TAT" button:
+  - Show animated loading spinner
+  - Display: Predicted TAT, Bottleneck Resource, Penalty Risk
+  - Show which gate it will be assigned to (next free gate from G1-G8)
+  - Trigger Monte Carlo and show P50/P75/P90 results
+
+---
+
+BACKEND (Python Flask):
+
+Create these API endpoints:
+
+POST /predict
+  - Input: flight features
+  - Run linear regression model (train on synthetic data if no CSV provided)
+  - Calculate Baggage_Duration, Fuel_Duration, Catering_Duration
+  - Identify bottleneck = max(Baggage_Share, Fuel_Share, Catering_Share)
+  - Return: predicted_TAT, bottleneck, penalty_risk
+
+POST /montecarlo
+  - Input: flight features + predicted sub-process durations
+  - Run 1000 simulations with numpy random normal noise
+  - Return: P50, P75, P90 TAT values and penalty amounts, 
+    bottleneck_consistency percentage, histogram data array
+
+GET /gates
+  - Return current state of all 8 gates (free/active/clearing, 
+    flight assigned, TAT progress)
+
+GET /analytics
+  - Return historical summary stats for Page 3 charts
+
+SYNTHETIC DATA:
+Since no real CSV is provided, generate 500 synthetic flight records 
+on backend startup with realistic values:
+  - Airlines: IndiGo (40%), Air India (15%), SpiceJet (25%), 
+    Vistara (10%), GoFirst (10%)
+  - Narrow body TAT: Normal(35, 8) minutes
+  - Wide body TAT: Normal(60, 12) minutes
+  - Fuel_Liters: 2000-8000 for narrow, 8000-20000 for wide
+  - Bags_Count: 80-180 for narrow, 200-350 for wide
+  - Catering_Required: 70% of flights
+  - Add realistic correlations (higher bags = longer baggage duration)
+
+---
+
+UI REQUIREMENTS:
+- Fully responsive (works on tablet and desktop)
+- Smooth page transitions
+- Animated number counters for KPI cards (count up effect)
+- Pulsing red dot on gates with critical delay risk
+- Auto-refresh gate map every 30 seconds
+- Tooltip on hover for every chart element
+- Premium glassmorphism card style (semi-transparent cards with blur)
+- Font: Inter or Space Grotesk
+
+---
+
+NAVIGATION:
+Fixed left sidebar with icons + labels:
+  🗺️ Live Ops (default)
+  ✈️ Flight Analysis  
+  📊 Analytics
+  🔮 Predict Flight
+
+TarmacIQ branding in sidebar header with a small airplane icon.
