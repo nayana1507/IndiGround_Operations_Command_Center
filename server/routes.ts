@@ -58,11 +58,51 @@ export async function registerRoutes(
   // Seed Database if empty
   await seedDatabase();
 
-  // ── Gates ────────────────────────────────────────────────
+  // ── Gates (with real-time live progress) ─────────────────
   app.get(api.gates.list.path, async (req, res) => {
     try {
       const allGates = await storage.getGates();
-      res.json(allGates);
+      const now = Date.now();
+
+      const enriched = await Promise.all(
+        allGates.map(async (gate) => {
+          if (!gate.currentFlightId) return { ...gate, flight: null, elapsedMin: 0, remainingMin: 0, progressPct: 0 };
+
+          const flight = await storage.getFlight(gate.currentFlightId);
+          if (!flight) return { ...gate, flight: null, elapsedMin: 0, remainingMin: 0, progressPct: 0 };
+
+          // Elapsed time since actual arrival (in minutes)
+          // Append Z to treat DB timestamp as UTC (stored without timezone)
+          const arrivalMs = new Date(flight.arrivalTime + "Z").getTime();
+          const elapsedMin = Math.max(0, Math.round((now - arrivalMs) / 60000));
+
+          // Predicted total TAT for this flight
+          const totalTat = flight.predictedTat ?? flight.actualTat ?? 45;
+
+          // Remaining time (clamp to 0)
+          const remainingMin = Math.max(0, totalTat - elapsedMin);
+
+          // Progress percentage (0-100)
+          const progressPct = Math.min(100, Math.round((elapsedMin / totalTat) * 100));
+
+          // Auto-complete gate if time has elapsed
+          let gateStatus = gate.status;
+          if (progressPct >= 100 && gate.status === "ACTIVE") {
+            gateStatus = "CLEARING";
+          }
+
+          return {
+            ...gate,
+            status: gateStatus,
+            flight,
+            elapsedMin,
+            remainingMin,
+            progressPct,
+          };
+        })
+      );
+
+      res.json(enriched);
     } catch (err) {
       res.status(500).json({ message: "Failed to fetch gates" });
     }
@@ -97,7 +137,26 @@ export async function registerRoutes(
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
       const csvText = req.file.buffer.toString("utf-8");
-      const records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true });
+
+      type CsvRow = {
+        flightNumber: string;
+        airline: string;
+        aircraftType: string;
+        arrivalTime: string;
+        arrivalDelay: string;
+        fuelLiters: string;
+        bagsCount: string;
+        priorityBags: string;
+        mealsQty: string;
+        specialMeals: string;
+        cateringRequired: string;
+        safetyCheck: string;
+        actualTat: string;
+        status: string;
+        [key: string]: string;
+      };
+
+      const records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true }) as CsvRow[];
 
       if (!records.length) return res.status(400).json({ message: "CSV file is empty" });
 
@@ -378,41 +437,57 @@ export async function registerRoutes(
 
 // ── Seed Database ────────────────────────────────────────────
 async function seedDatabase() {
-  const existingGates = await storage.getGates();
+  try {
+    console.log("[seed] Checking database...");
 
-  if (existingGates.length === 0) {
-    // Create Gates G1-G8
-    for (let i = 1; i <= 8; i++) {
-      await storage.createGate({ gateNumber: `G${i}`, status: "FREE" });
-    }
-  }
+    const existingGates = await storage.getGates();
+    console.log(`[seed] Found ${existingGates.length} gates`);
 
-  const existingFlights = await storage.getFlights();
-  if (existingFlights.length === 0) {
-    // Seed real flights from dataset
-    const realFlights = getRealFlights();
-
-    for (const f of realFlights) {
-      const created = await storage.createFlight(f);
-      const pred = calcPrediction(f);
-      await storage.updateFlight(created.id, {
-        predictedTat: pred.predictedTat,
-        bottleneck: pred.bottleneck,
-        penaltyRisk: pred.penaltyRisk,
-      });
+    if (existingGates.length === 0) {
+      console.log("[seed] Creating gates G1-G8...");
+      for (let i = 1; i <= 8; i++) {
+        await storage.createGate({ gateNumber: `G${i}`, status: "FREE" });
+      }
+      console.log("[seed] Gates created.");
     }
 
-    // Assign first 4 SCHEDULED flights to gates as ACTIVE
-    const allFlights = await storage.getFlights();
-    const scheduled = allFlights.filter((f) => f.status === "SCHEDULED").slice(0, 4);
-    const dbGates = await storage.getGates();
+    const existingFlights = await storage.getFlights();
+    console.log(`[seed] Found ${existingFlights.length} flights`);
 
-    for (let i = 0; i < scheduled.length; i++) {
-      const flight = scheduled[i];
-      const gate = dbGates[i];
-      await storage.updateFlight(flight.id, { status: "ACTIVE" });
-      await storage.updateGate(gate.id, { status: "ACTIVE", currentFlightId: flight.id });
+    if (existingFlights.length === 0) {
+      console.log("[seed] Seeding flights...");
+      const realFlights = getRealFlights();
+
+      for (const f of realFlights) {
+        const created = await storage.createFlight(f);
+        const pred = calcPrediction(f);
+        await storage.updateFlight(created.id, {
+          predictedTat: pred.predictedTat,
+          bottleneck: pred.bottleneck,
+          penaltyRisk: pred.penaltyRisk,
+        });
+        console.log(`[seed] Created flight ${f.flightNumber}`);
+      }
+
+      // Assign first 4 SCHEDULED flights to gates as ACTIVE
+      const allFlights = await storage.getFlights();
+      const scheduled = allFlights.filter((f) => f.status === "SCHEDULED").slice(0, 4);
+      const dbGates = await storage.getGates();
+
+      for (let i = 0; i < scheduled.length; i++) {
+        const flight = scheduled[i];
+        const gate = dbGates[i];
+        await storage.updateFlight(flight.id, { status: "ACTIVE" });
+        await storage.updateGate(gate.id, { status: "ACTIVE", currentFlightId: flight.id });
+        console.log(`[seed] Assigned ${flight.flightNumber} to ${gate.gateNumber}`);
+      }
+
+      console.log("[seed] Done!");
+    } else {
+      console.log("[seed] DB already seeded, skipping.");
     }
+  } catch (err) {
+    console.error("[seed] ERROR:", err);
   }
 }
 
@@ -424,15 +499,18 @@ function getRealFlights() {
 
   // Representative sample from the real dataset for initial seed
   return [
-    { flightNumber: "AM-1001-031", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now + 1 * 3600000), arrivalDelay: 0, fuelLiters: 7048, bagsCount: 123, priorityBags: 14, mealsQty: 151, specialMeals: 7, cateringRequired: true, safetyCheck: true, actualTat: 42, status: "SCHEDULED" },
-    { flightNumber: "AM-1001-063", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now + 2 * 3600000), arrivalDelay: 0, fuelLiters: 12489, bagsCount: 90, priorityBags: 10, mealsQty: 199, specialMeals: 17, cateringRequired: true, safetyCheck: true, actualTat: 36, status: "SCHEDULED" },
-    { flightNumber: "AM-1001-098", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now + 3 * 3600000), arrivalDelay: 0, fuelLiters: 13836, bagsCount: 76, priorityBags: 8, mealsQty: 151, specialMeals: 7, cateringRequired: true, safetyCheck: true, actualTat: 38, status: "SCHEDULED" },
-    { flightNumber: "DL-1002-010", airline: "Delta", aircraftType: "Narrow", arrivalTime: new Date(now + 4 * 3600000), arrivalDelay: 0, fuelLiters: 8200, bagsCount: 110, priorityBags: 12, mealsQty: 165, specialMeals: 9, cateringRequired: true, safetyCheck: true, actualTat: 35, status: "SCHEDULED" },
-    { flightNumber: "DL-1002-012", airline: "Delta", aircraftType: "Wide", arrivalTime: new Date(now + 5 * 3600000), arrivalDelay: 0, fuelLiters: 15200, bagsCount: 245, priorityBags: 22, mealsQty: 248, specialMeals: 14, cateringRequired: true, safetyCheck: true, actualTat: 55, status: "SCHEDULED" },
-    { flightNumber: "WN-1003-001", airline: "Southwest", aircraftType: "Narrow", arrivalTime: new Date(now - 2 * 3600000), arrivalDelay: 0, fuelLiters: 6100, bagsCount: 95, priorityBags: 6, mealsQty: 140, specialMeals: 5, cateringRequired: true, safetyCheck: true, actualTat: 28, status: "COMPLETED" },
-    { flightNumber: "WN-1003-075", airline: "Southwest", aircraftType: "Narrow", arrivalTime: new Date(now - 4 * 3600000), arrivalDelay: 0, fuelLiters: 5800, bagsCount: 88, priorityBags: 5, mealsQty: 130, specialMeals: 3, cateringRequired: false, safetyCheck: true, actualTat: 25, status: "COMPLETED" },
-    { flightNumber: "UA-1004-059", airline: "United", aircraftType: "Wide", arrivalTime: new Date(now - 1 * 3600000), arrivalDelay: 0, fuelLiters: 14500, bagsCount: 260, priorityBags: 25, mealsQty: 262, specialMeals: 16, cateringRequired: true, safetyCheck: true, actualTat: 58, status: "COMPLETED" },
-    { flightNumber: "UA-1004-112", airline: "United", aircraftType: "Narrow", arrivalTime: new Date(now - 3 * 3600000), arrivalDelay: 0, fuelLiters: 7300, bagsCount: 105, priorityBags: 9, mealsQty: 158, specialMeals: 8, cateringRequired: true, safetyCheck: false, actualTat: 30, status: "COMPLETED" },
-    { flightNumber: "DL-1005-088", airline: "Delta", aircraftType: "Narrow", arrivalTime: new Date(now - 5 * 3600000), arrivalDelay: 0, fuelLiters: 9100, bagsCount: 130, priorityBags: 15, mealsQty: 175, specialMeals: 11, cateringRequired: true, safetyCheck: true, actualTat: 40, status: "COMPLETED" },
+    // ACTIVE flights: arrival = now so live progress starts at 0% and ticks up in real time
+    { flightNumber: "AM-1001-031", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now - 5 * 60000),  arrivalDelay: 0, fuelLiters: 7048,  bagsCount: 123, priorityBags: 14, mealsQty: 151, specialMeals: 7,  cateringRequired: true,  safetyCheck: true,  actualTat: 42, status: "SCHEDULED" },
+    { flightNumber: "AM-1001-063", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now - 10 * 60000), arrivalDelay: 0, fuelLiters: 12489, bagsCount: 90,  priorityBags: 10, mealsQty: 199, specialMeals: 17, cateringRequired: true,  safetyCheck: true,  actualTat: 36, status: "SCHEDULED" },
+    { flightNumber: "AM-1001-098", airline: "American", aircraftType: "Narrow", arrivalTime: new Date(now - 8 * 60000),  arrivalDelay: 0, fuelLiters: 13836, bagsCount: 76,  priorityBags: 8,  mealsQty: 151, specialMeals: 7,  cateringRequired: true,  safetyCheck: true,  actualTat: 38, status: "SCHEDULED" },
+    { flightNumber: "DL-1002-010", airline: "Delta",    aircraftType: "Narrow", arrivalTime: new Date(now - 15 * 60000), arrivalDelay: 0, fuelLiters: 8200,  bagsCount: 110, priorityBags: 12, mealsQty: 165, specialMeals: 9,  cateringRequired: true,  safetyCheck: true,  actualTat: 35, status: "SCHEDULED" },
+    // INCOMING: arriving in future
+    { flightNumber: "DL-1002-012", airline: "Delta",    aircraftType: "Wide",   arrivalTime: new Date(now + 45 * 60000), arrivalDelay: 0, fuelLiters: 15200, bagsCount: 245, priorityBags: 22, mealsQty: 248, specialMeals: 14, cateringRequired: true,  safetyCheck: true,  actualTat: 55, status: "SCHEDULED" },
+    { flightNumber: "WN-1003-001", airline: "Southwest",aircraftType: "Narrow", arrivalTime: new Date(now + 90 * 60000), arrivalDelay: 0, fuelLiters: 6100,  bagsCount: 95,  priorityBags: 6,  mealsQty: 140, specialMeals: 5,  cateringRequired: true,  safetyCheck: true,  actualTat: 28, status: "SCHEDULED" },
+    // COMPLETED: in the past
+    { flightNumber: "WN-1003-075", airline: "Southwest",aircraftType: "Narrow", arrivalTime: new Date(now - 4 * 3600000), arrivalDelay: 0, fuelLiters: 5800,  bagsCount: 88,  priorityBags: 5,  mealsQty: 130, specialMeals: 3,  cateringRequired: false, safetyCheck: true,  actualTat: 25, status: "COMPLETED" },
+    { flightNumber: "UA-1004-059", airline: "United",   aircraftType: "Wide",   arrivalTime: new Date(now - 2 * 3600000), arrivalDelay: 0, fuelLiters: 14500, bagsCount: 260, priorityBags: 25, mealsQty: 262, specialMeals: 16, cateringRequired: true,  safetyCheck: true,  actualTat: 58, status: "COMPLETED" },
+    { flightNumber: "UA-1004-112", airline: "United",   aircraftType: "Narrow", arrivalTime: new Date(now - 3 * 3600000), arrivalDelay: 0, fuelLiters: 7300,  bagsCount: 105, priorityBags: 9,  mealsQty: 158, specialMeals: 8,  cateringRequired: true,  safetyCheck: false, actualTat: 30, status: "COMPLETED" },
+    { flightNumber: "DL-1005-088", airline: "Delta",    aircraftType: "Narrow", arrivalTime: new Date(now - 5 * 3600000), arrivalDelay: 0, fuelLiters: 9100,  bagsCount: 130, priorityBags: 15, mealsQty: 175, specialMeals: 11, cateringRequired: true,  safetyCheck: true,  actualTat: 40, status: "COMPLETED" },
   ];
 }

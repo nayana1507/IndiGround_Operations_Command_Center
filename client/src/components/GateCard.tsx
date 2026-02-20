@@ -1,21 +1,47 @@
 import { motion } from "framer-motion";
-import { Plane, AlertTriangle, Clock, Activity, CheckCircle2 } from "lucide-react";
+import { Plane, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GateWithFlight } from "@shared/schema";
 import { Link } from "wouter";
+import { useState, useEffect } from "react";
 
 interface GateCardProps {
-  gate: GateWithFlight;
+  gate: GateWithFlight & {
+    elapsedMin?: number;
+    remainingMin?: number;
+    progressPct?: number;
+  };
 }
 
 export function GateCard({ gate }: GateCardProps) {
   const isOccupied = gate.status === "ACTIVE" || gate.status === "CLEARING";
   const hasPenaltyRisk = (gate.flight?.penaltyRisk || 0) > 0;
-  
-  // Progress calc
-  const predictedTat = gate.flight?.predictedTat || 45; // default 45m
-  const elapsed = 25; // Mock elapsed time for demo
-  const progress = Math.min((elapsed / predictedTat) * 100, 100);
+  const predictedTat = gate.flight?.predictedTat || 45;
+
+  // Live elapsed/remaining/progress — ticks every second client-side
+  const [liveElapsed, setLiveElapsed] = useState(0);
+  const [liveRemaining, setLiveRemaining] = useState(predictedTat);
+  const [liveProgress, setLiveProgress] = useState(0);
+
+  useEffect(() => {
+    if (!gate.flight?.arrivalTime) return;
+
+    const tick = () => {
+      const arrivalMs = new Date(gate.flight!.arrivalTime).getTime();
+      const elapsedMs = Date.now() - arrivalMs;
+      const elapsedMin = Math.max(0, Math.floor(elapsedMs / 60000));
+      const remainingMin = Math.max(0, predictedTat - elapsedMin);
+      const progressPct = Math.min(100, Math.round((elapsedMin / predictedTat) * 100));
+
+      setLiveElapsed(elapsedMin);
+      setLiveRemaining(remainingMin);
+      setLiveProgress(progressPct);
+    };
+
+    tick(); // run immediately
+    const timer = setInterval(tick, 1000); // update every second
+    return () => clearInterval(timer);
+  }, [gate.flight?.arrivalTime, predictedTat]);
 
   return (
     <motion.div
@@ -29,7 +55,6 @@ export function GateCard({ gate }: GateCardProps) {
         gate.status === "FREE" && "border-l-4 border-l-emerald-500 opacity-75 hover:opacity-100"
       )}
     >
-      {/* Background glow for active gates */}
       {isOccupied && (
         <div className="absolute -right-10 -top-10 w-32 h-32 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
       )}
@@ -48,15 +73,15 @@ export function GateCard({ gate }: GateCardProps) {
             </span>
           </h3>
         </div>
-        
+
         {isOccupied && gate.flight && (
           <div className="text-right">
-             <Link href={`/flights/${gate.flight.id}`}>
-               <span className="text-sm font-mono text-primary hover:underline cursor-pointer">
-                 {gate.flight.flightNumber}
-               </span>
-             </Link>
-             <p className="text-xs text-muted-foreground">{gate.flight.airline}</p>
+            <Link href={`/flights/${gate.flight.id}`}>
+              <span className="text-sm font-mono text-primary hover:underline cursor-pointer">
+                {gate.flight.flightNumber}
+              </span>
+            </Link>
+            <p className="text-xs text-muted-foreground">{gate.flight.airline}</p>
           </div>
         )}
       </div>
@@ -70,6 +95,7 @@ export function GateCard({ gate }: GateCardProps) {
                 "font-medium flex items-center gap-1.5",
                 gate.flight.bottleneck === "BAGGAGE" && "text-amber-400",
                 gate.flight.bottleneck === "FUEL" && "text-red-400",
+                gate.flight.bottleneck === "CATERING" && "text-orange-400",
                 !gate.flight.bottleneck && "text-emerald-400"
               )}>
                 {gate.flight.bottleneck ? (
@@ -85,7 +111,7 @@ export function GateCard({ gate }: GateCardProps) {
                 )}
               </span>
             </div>
-            
+
             <div className="flex flex-col gap-1 text-right">
               <span className="text-muted-foreground text-xs uppercase tracking-wider">Penalty Risk</span>
               <span className={cn(
@@ -97,19 +123,37 @@ export function GateCard({ gate }: GateCardProps) {
             </div>
           </div>
 
+          {/* Live timing row - updates every second */}
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 tabular-nums">
+              <Clock className="w-3 h-3" />
+              {liveElapsed}m elapsed
+            </span>
+            <span className={cn(
+              "font-medium tabular-nums",
+              liveRemaining <= 5 ? "text-red-400" :
+              liveRemaining <= 15 ? "text-amber-400" :
+              "text-muted-foreground"
+            )}>
+              {liveRemaining > 0 ? `${liveRemaining}m remaining` : "⚠ Overdue"}
+            </span>
+          </div>
+
+          {/* Progress bar - updates every second */}
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>Progress</span>
-              <span>{predictedTat}m EST</span>
+              <span>{predictedTat}m TAT</span>
             </div>
             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${progress}%` }}
+              <div
                 className={cn(
-                  "h-full rounded-full",
-                  progress > 90 ? "bg-red-500" : "bg-primary"
+                  "h-full rounded-full transition-all duration-1000 ease-linear",
+                  liveProgress >= 100 ? "bg-red-500" :
+                  liveProgress > 75 ? "bg-amber-500" :
+                  "bg-primary"
                 )}
+                style={{ width: `${liveProgress}%` }}
               />
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Plane, Activity, BarChart3, Calculator, Menu, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,16 @@ const NAV_ITEMS = [
 
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
+  const [now, setNow] = useState(new Date());
+
+  // Tick every second
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const dateStr = now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
 
   const NavContent = () => (
     <div className="flex flex-col h-full">
@@ -96,7 +106,7 @@ export function Layout({ children }: LayoutProps) {
       <main className="flex-1 h-screen overflow-y-auto relative">
         {/* Header */}
         <header className="sticky top-0 z-40 px-8 py-4 glass-card border-b border-white/5 flex items-center justify-between mb-6">
-          <div className="lg:hidden" /> {/* Spacer for mobile menu button */}
+          <div className="lg:hidden" />
           <div className="hidden lg:block">
             <h2 className="text-lg font-medium text-muted-foreground">
               {NAV_ITEMS.find(i => location === i.href || (i.href !== "/" && location.startsWith(i.href)))?.label || "Dashboard"}
@@ -105,11 +115,11 @@ export function Layout({ children }: LayoutProps) {
 
           <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
-              <span className="text-sm font-display font-bold text-white">
-                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <span className="text-sm font-display font-bold text-white tabular-nums">
+                {timeStr}
               </span>
               <span className="text-xs text-muted-foreground">
-                {new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+                {dateStr}
               </span>
             </div>
             <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-white">
