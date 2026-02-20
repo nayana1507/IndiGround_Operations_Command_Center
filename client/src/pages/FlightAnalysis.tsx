@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Plane, Clock, AlertTriangle, Play, RefreshCw, BarChart2 } from "lucide-react";
+import { Plane, Clock, AlertTriangle, Play, RefreshCw, BarChart2, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
