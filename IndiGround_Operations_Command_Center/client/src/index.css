@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* HSL values for Space/Navy Theme */
+  --background: 225 50% 8%;    /* Deep Navy #0a0f1e */
+  --foreground: 210 40% 98%;   /* White text */
+
+  --card: 225 50% 10%;         /* Slightly lighter navy */
+  --card-foreground: 210 40% 98%;
+  --card-border: 225 40% 20%;
+
+  --popover: 225 50% 10%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 199 100% 50%;     /* Electric Blue #00aaff */
+  --primary-foreground: 225 50% 8%;
+
+  --secondary: 225 40% 20%;    /* Muted navy for secondary actions */
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 225 30% 15%;
+  --muted-foreground: 215 20% 65%;
+
+  --accent: 199 100% 50%;      /* Electric Blue */
+  --accent-foreground: 225 50% 8%;
+
+  --destructive: 0 84% 60%;    /* Red for critical alerts */
+  --destructive-foreground: 210 40% 98%;
+  
+  --warning: 38 92% 50%;       /* Amber for warnings */
+
+  --border: 225 40% 20%;
+  --input: 225 40% 20%;
+  --ring: 199 100% 50%;
+
+  --radius: 0.75rem;
+  
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(0, 170, 255, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 0% 100%, rgba(0, 170, 255, 0.05) 0%, transparent 30%);
+    background-attachment: fixed;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    @apply font-bold tracking-tight;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-md border border-white/5 shadow-xl;
+  }
+  
+  .glass-panel {
+    @apply bg-background/80 backdrop-blur-xl border-r border-white/5;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px rgba(0, 170, 255, 0.5);
+  }
+  
+  .border-glow {
+    box-shadow: 0 0 15px -3px rgba(0, 170, 255, 0.3);
+  }
+}
+
+/* Custom Scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background)); 
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted)); 
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5); 
+}
