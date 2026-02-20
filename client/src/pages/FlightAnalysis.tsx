@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Plane, Clock, AlertTriangle, Play, RefreshCw, BarChart2, Activity } from "lucide-react";
+import { Plane, Clock, AlertTriangle, RefreshCw, BarChart2, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -31,6 +31,31 @@ export default function FlightAnalysis() {
       setDelayInput(flight.arrivalDelay || 0);
     }
   }, [flight]);
+
+  // Auto-run simulation when delay input changes
+  useEffect(() => {
+    if (!flight) return;
+    const timer = setTimeout(() => {
+      const request = {
+        flightNumber: flight.flightNumber,
+        airline: flight.airline,
+        aircraftType: flight.aircraftType,
+        arrivalTime: new Date().toISOString(),
+        arrivalDelay: parseInt(String(delayInput)) || 0,
+        fuelLiters: flight.fuelLiters,
+        bagsCount: flight.bagsCount,
+        priorityBags: flight.priorityBags,
+        mealsQty: flight.mealsQty,
+        specialMeals: flight.specialMeals,
+        cateringRequired: flight.cateringRequired,
+        safetyCheck: flight.safetyCheck,
+      };
+      predictMutation.mutate(request);
+      monteCarloMutation.mutate(request);
+    }, 600); // waits 600ms after you stop typing before firing
+
+    return () => clearTimeout(timer);
+  }, [delayInput, flight]);
 
   const handleSimulate = () => {
     if (!flight) return;
@@ -101,10 +126,7 @@ export default function FlightAnalysis() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Reset
             </Button>
-            <Button onClick={handleSimulate} disabled={predictMutation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
-              {predictMutation.isPending ? "Simulating..." : "Run Simulation"}
-              {!predictMutation.isPending && <Play className="w-4 h-4 ml-2" />}
-            </Button>
+            
           </div>
         </div>
 
