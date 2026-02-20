@@ -96,7 +96,26 @@ export async function registerRoutes(
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
       const csvText = req.file.buffer.toString("utf-8");
-      const records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true });
+
+      type CsvRow = {
+        flightNumber: string;
+        airline: string;
+        aircraftType: string;
+        arrivalTime: string;
+        arrivalDelay: string;
+        fuelLiters: string;
+        bagsCount: string;
+        priorityBags: string;
+        mealsQty: string;
+        specialMeals: string;
+        cateringRequired: string;
+        safetyCheck: string;
+        actualTat: string;
+        status: string;
+        [key: string]: string;
+      };
+
+      const records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true }) as CsvRow[];
 
       if (!records.length) return res.status(400).json({ message: "CSV file is empty" });
 
