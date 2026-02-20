@@ -36,6 +36,22 @@ export const gates = pgTable("gates", {
   currentFlightId: integer("current_flight_id"), // references flights.id
 });
 
+export const alerts = pgTable("alerts", {
+  id: serial("id").primaryKey(),
+  flightNumber: text("flight_number").notNull(),
+  gate: integer("gate").notNull(),
+  bottleneck: text("bottleneck").notNull(),
+  tatBloat: integer("tat_bloat").notNull(),
+  penaltyRisk: integer("penalty_risk").notNull(),
+  severity: text("severity").notNull().default("warning"),
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true });
+export type Alert = typeof alerts.$inferSelect;
+export type InsertAlert = z.infer<typeof insertAlertSchema>;
+
 // === BASE SCHEMAS ===
 export const insertFlightSchema = createInsertSchema(flights).omit({ id: true });
 export const insertGateSchema = createInsertSchema(gates).omit({ id: true });
