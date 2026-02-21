@@ -13,12 +13,30 @@ interface GateCardProps {
   };
 }
 
+// Safely parse arrival time regardless of whether it's a string, Date, or has timezone
+function parseArrivalMs(arrivalTime: unknown): number {
+  if (!arrivalTime) return Date.now();
+  
+  if (arrivalTime instanceof Date) {
+    return arrivalTime.getTime();
+  }
+  
+  const str = String(arrivalTime);
+  
+  // If it already has timezone info (Z or +XX:XX), parse as-is
+  if (str.endsWith('Z') || str.includes('+') || str.match(/T.*-\d{2}:\d{2}$/)) {
+    return new Date(str).getTime();
+  }
+  
+  // No timezone — treat as UTC by appending Z
+  return new Date(str + 'Z').getTime();
+}
+
 export function GateCard({ gate }: GateCardProps) {
   const isOccupied = gate.status === "ACTIVE" || gate.status === "CLEARING";
   const hasPenaltyRisk = (gate.flight?.penaltyRisk || 0) > 0;
   const predictedTat = gate.flight?.predictedTat || 45;
 
-  // Live elapsed/remaining/progress — ticks every second client-side
   const [liveElapsed, setLiveElapsed] = useState(0);
   const [liveRemaining, setLiveRemaining] = useState(predictedTat);
   const [liveProgress, setLiveProgress] = useState(0);
@@ -26,8 +44,9 @@ export function GateCard({ gate }: GateCardProps) {
   useEffect(() => {
     if (!gate.flight?.arrivalTime) return;
 
+    const arrivalMs = parseArrivalMs(gate.flight.arrivalTime);
+
     const tick = () => {
-      const arrivalMs = new Date(gate.flight!.arrivalTime).getTime();
       const elapsedMs = Date.now() - arrivalMs;
       const elapsedMin = Math.max(0, Math.floor(elapsedMs / 60000));
       const remainingMin = Math.max(0, predictedTat - elapsedMin);
@@ -38,8 +57,8 @@ export function GateCard({ gate }: GateCardProps) {
       setLiveProgress(progressPct);
     };
 
-    tick(); // run immediately
-    const timer = setInterval(tick, 1000); // update every second
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [gate.flight?.arrivalTime, predictedTat]);
 

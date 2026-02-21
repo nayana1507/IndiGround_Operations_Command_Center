@@ -4,11 +4,10 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db } from "./db";
-import { flights, gates, alerts } from "@shared/schema";
+import { flights, gates } from "@shared/schema";
 import { sql, avg, count, sum, eq } from "drizzle-orm";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
-
 
 // Helper function for normal distribution
 function randomNormal(mean: number, stdDev: number): number {
@@ -121,6 +120,17 @@ export async function registerRoutes(
     }
   });
 
+  // All flights endpoint (for flight list page)
+  app.get("/api/flights/all", async (req, res) => {
+    try {
+      const all = await storage.getFlights();
+      const sorted = all.sort((a, b) => new Date(b.arrivalTime).getTime() - new Date(a.arrivalTime).getTime());
+      res.json(sorted);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch flights" });
+    }
+  });
+
   app.get(api.flights.get.path, async (req, res) => {
     try {
       const flight = await storage.getFlight(Number(req.params.id));
@@ -164,7 +174,7 @@ export async function registerRoutes(
       const created: any[] = [];
 
       for (let i = 0; i < records.length; i++) {
-        const row = records[i] as Record<string, string>;;
+        const row = records[i];
         const rowNum = i + 2;
 
         try {
@@ -391,47 +401,6 @@ export async function registerRoutes(
     }
   });
 
-  // ── Alerts ──────────────────────────────────────────────
-  app.get("/api/alerts", async (req, res) => {
-    try {
-      const active = await db
-        .select()
-        .from(alerts)
-        .where(eq(alerts.acknowledged, false));
-      res.json(active);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch alerts" });
-    }
-  });
-
-  app.patch("/api/alerts/:id/acknowledge", async (req, res) => {
-    try {
-      await db
-        .update(alerts)
-        .set({ acknowledged: true })
-        .where(eq(alerts.id, Number(req.params.id)));
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ message: "Failed to acknowledge alert" });
-    }
-  });
-
-  app.post("/api/alerts/seed", async (req, res) => {
-    try {
-      const alert = await db.insert(alerts).values({
-        flightNumber: "6E-412",
-        gate: 1,
-        bottleneck: "Catering",
-        tatBloat: 18,
-        penaltyRisk: 97200,
-        severity: "critical",
-      }).returning();
-      res.json(alert[0]);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to seed alert" });
-    }
-  });
-
   return httpServer;
 }
 
@@ -486,6 +455,21 @@ async function seedDatabase() {
     } else {
       console.log("[seed] DB already seeded, skipping.");
     }
+
+    // Always refresh ACTIVE flight arrival times on every startup
+    // so progress bars start fresh and don't show as overdue
+    const allFlights = await storage.getFlights();
+    const activeFlights = allFlights.filter((f) => f.status === "ACTIVE");
+    const offsets = [5, 10, 8, 15, 12, 7, 3, 20]; // minutes ago per flight
+    for (let i = 0; i < activeFlights.length; i++) {
+      await storage.updateFlight(activeFlights[i].id, {
+        arrivalTime: new Date(Date.now() - (offsets[i] || 10) * 60000),
+      });
+    }
+    if (activeFlights.length > 0) {
+      console.log(`[seed] Refreshed ${activeFlights.length} active flight arrival times to now.`);
+    }
+
   } catch (err) {
     console.error("[seed] ERROR:", err);
   }
