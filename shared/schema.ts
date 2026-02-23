@@ -9,7 +9,7 @@ export const flights = pgTable("flights", {
   airline: text("airline").notNull(),
   aircraftType: text("aircraft_type").notNull(), // Narrow, Wide
   arrivalTime: timestamp("arrival_time").notNull(),
-  arrivalDelay: integer("arrival_delay").notNull().default(0), // in minutes
+  arrivalDelay: integer("arrival_delay").notNull().default(0),
   fuelLiters: integer("fuel_liters").notNull(),
   bagsCount: integer("bags_count").notNull(),
   priorityBags: integer("priority_bags").notNull().default(0),
@@ -17,23 +17,35 @@ export const flights = pgTable("flights", {
   specialMeals: integer("special_meals").notNull().default(0),
   cateringRequired: boolean("catering_required").notNull().default(true),
   safetyCheck: boolean("safety_check").notNull().default(true),
-  
+
   // Predictions
   predictedTat: integer("predicted_tat"),
   bottleneck: text("bottleneck"),
   penaltyRisk: integer("penalty_risk"),
-  
-  // For historical data
+
+  // Historical
   actualTat: integer("actual_tat"),
   gateId: integer("gate_id"),
-  status: text("status").notNull().default("COMPLETED"), // SCHEDULED, ACTIVE, COMPLETED
+
+  // DAY 2: status now includes "DIVERTED" and "FUEL_QUEUE"
+  // SCHEDULED, ACTIVE, COMPLETED, DIVERTED, FUEL_QUEUE
+  status: text("status").notNull().default("COMPLETED"),
+
+  // DAY 2: penalty rate per minute (default 5400 domestic, 15000 international)
+  penaltyRatePerMin: integer("penalty_rate_per_min").notNull().default(5400),
+
+  // DAY 2: fuel queue position (null = not queued, 1-4 = being fuelled, 5+ = waiting)
+  fuelQueuePosition: integer("fuel_queue_position"),
+
+  // DAY 2: fuel start time (when bowser started fuelling this flight)
+  fuelStartTime: timestamp("fuel_start_time"),
 });
 
 export const gates = pgTable("gates", {
   id: serial("id").primaryKey(),
-  gateNumber: text("gate_number").notNull(), // G1-G8
+  gateNumber: text("gate_number").notNull(),
   status: text("status").notNull(), // FREE, ACTIVE, CLEARING
-  currentFlightId: integer("current_flight_id"), // references flights.id
+  currentFlightId: integer("current_flight_id"),
 });
 
 export const alerts = pgTable("alerts", {
@@ -48,19 +60,29 @@ export const alerts = pgTable("alerts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true });
-export type Alert = typeof alerts.$inferSelect;
-export type InsertAlert = z.infer<typeof insertAlertSchema>;
+// DAY 2: Crisis state table — tracks whether fuel crisis is active
+export const crisisState = pgTable("crisis_state", {
+  id: serial("id").primaryKey(),
+  fuelCrisisActive: boolean("fuel_crisis_active").notNull().default(false),
+  bowserCount: integer("bowser_count").notNull().default(4), // max simultaneous fuelling
+  manualPumpSpeed: integer("manual_pump_speed").notNull().default(500), // liters per minute
+  activatedAt: timestamp("activated_at"),
+});
 
-// === BASE SCHEMAS ===
+// === SCHEMAS ===
 export const insertFlightSchema = createInsertSchema(flights).omit({ id: true });
 export const insertGateSchema = createInsertSchema(gates).omit({ id: true });
+export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true });
+export const insertCrisisStateSchema = createInsertSchema(crisisState).omit({ id: true });
 
-// === EXPLICIT API CONTRACT TYPES ===
+// === TYPES ===
 export type Flight = typeof flights.$inferSelect;
 export type InsertFlight = z.infer<typeof insertFlightSchema>;
 export type Gate = typeof gates.$inferSelect;
 export type InsertGate = z.infer<typeof insertGateSchema>;
+export type Alert = typeof alerts.$inferSelect;
+export type InsertAlert = z.infer<typeof insertAlertSchema>;
+export type CrisisState = typeof crisisState.$inferSelect;
 
 export const predictRequestSchema = z.object({
   flightNumber: z.string(),
@@ -75,6 +97,9 @@ export const predictRequestSchema = z.object({
   specialMeals: z.number().default(0),
   cateringRequired: z.boolean().default(true),
   safetyCheck: z.boolean().default(true),
+  // DAY 2
+  fuelCrisisActive: z.boolean().default(false),
+  penaltyRatePerMin: z.number().default(5400),
 });
 
 export type PredictRequest = z.infer<typeof predictRequestSchema>;
@@ -87,6 +112,9 @@ export const predictResponseSchema = z.object({
   fuelDuration: z.number(),
   cateringDuration: z.number(),
   safetyCheckDuration: z.number(),
+  // DAY 2
+  fuelQueueDelay: z.number().optional(),
+  isManualFuelling: z.boolean().optional(),
 });
 
 export type PredictResponse = z.infer<typeof predictResponseSchema>;
@@ -121,5 +149,5 @@ export const analyticsResponseSchema = z.object({
 
 export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
 
-export const gateWithFlightSchema = z.any(); // Custom type for Gate + Flight
+export const gateWithFlightSchema = z.any();
 export type GateWithFlight = Gate & { flight?: Flight };

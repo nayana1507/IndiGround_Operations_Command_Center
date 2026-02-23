@@ -4,7 +4,6 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Plane, Clock, AlertTriangle, RefreshCw, BarChart2, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
 import { 
@@ -14,9 +13,7 @@ import {
 import { motion } from "framer-motion";
 
 export default function FlightAnalysis() {
-  const { id } = useParams(); // Note: wouter params are string, but our API usually takes IDs. 
-                              // For this demo we might need to fetch by ID or mock it if param is missing.
-                              // Assuming valid numeric ID for now.
+  const { id } = useParams();
   const flightId = id ? parseInt(id) : 1; 
   
   const { data: flight, isLoading } = useFlight(flightId);
@@ -25,14 +22,10 @@ export default function FlightAnalysis() {
 
   const [delayInput, setDelayInput] = useState(0);
 
-  // Sync state with fetched data
   useEffect(() => {
-    if (flight) {
-      setDelayInput(flight.arrivalDelay || 0);
-    }
+    if (flight) setDelayInput(flight.arrivalDelay || 0);
   }, [flight]);
 
-  // Auto-run simulation when delay input changes
   useEffect(() => {
     if (!flight) return;
     const timer = setTimeout(() => {
@@ -49,23 +42,22 @@ export default function FlightAnalysis() {
         specialMeals: flight.specialMeals,
         cateringRequired: flight.cateringRequired,
         safetyCheck: flight.safetyCheck,
+        penaltyRatePerMin: (flight as any).penaltyRatePerMin ?? 5400,
+        fuelCrisisActive: false,
       };
       predictMutation.mutate(request);
       monteCarloMutation.mutate(request);
-    }, 600); // waits 600ms after you stop typing before firing
-
+    }, 600);
     return () => clearTimeout(timer);
   }, [delayInput, flight]);
 
   const handleSimulate = () => {
     if (!flight) return;
-    
-    // Construct request object from flight data + user input
     const request = {
       flightNumber: flight.flightNumber,
       airline: flight.airline,
       aircraftType: flight.aircraftType,
-      arrivalTime: new Date().toISOString(), // Use current for re-sim
+      arrivalTime: new Date().toISOString(),
       arrivalDelay: parseInt(String(delayInput)),
       fuelLiters: flight.fuelLiters,
       bagsCount: flight.bagsCount,
@@ -74,8 +66,9 @@ export default function FlightAnalysis() {
       specialMeals: flight.specialMeals,
       cateringRequired: flight.cateringRequired,
       safetyCheck: flight.safetyCheck,
+      penaltyRatePerMin: (flight as any).penaltyRatePerMin ?? 5400,
+      fuelCrisisActive: false,
     };
-
     predictMutation.mutate(request);
     monteCarloMutation.mutate(request);
   };
@@ -90,7 +83,6 @@ export default function FlightAnalysis() {
     );
   }
 
-  // Use mutation results if available, otherwise fallback to flight data defaults for display
   const predictedData = predictMutation.data;
   const mcData = monteCarloMutation.data;
 
@@ -98,12 +90,18 @@ export default function FlightAnalysis() {
   const currentRisk = predictedData?.penaltyRisk ?? flight.penaltyRisk ?? 0;
   const bottleneck = predictedData?.bottleneck || flight.bottleneck;
 
-  // Chart data
+  // Gate display — use gateNumber if API provides it, else derive from gateId
+  const gateDisplay = (flight as any).gateNumber
+    ? (flight as any).gateNumber
+    : flight.gateId
+    ? `G${flight.gateId}`
+    : "Unassigned";
+
   const processData = [
     { name: "Baggage", duration: predictedData?.baggageDuration || 25, fill: "#0ea5e9" },
-    { name: "Fuel", duration: predictedData?.fuelDuration || 20, fill: "#8b5cf6" },
-    { name: "Catering", duration: predictedData?.cateringDuration || 30, fill: "#f59e0b" },
-    { name: "Safety", duration: predictedData?.safetyCheckDuration || 15, fill: "#10b981" },
+    { name: "Fuel",    duration: predictedData?.fuelDuration    || 20, fill: "#8b5cf6" },
+    { name: "Catering",duration: predictedData?.cateringDuration|| 30, fill: "#f59e0b" },
+    { name: "Safety",  duration: predictedData?.safetyCheckDuration || 15, fill: "#10b981" },
   ];
 
   return (
@@ -117,8 +115,15 @@ export default function FlightAnalysis() {
               <span className="bg-white/10 text-white px-2 py-0.5 rounded text-sm font-medium border border-white/10">
                 {flight.aircraftType}
               </span>
+              {flight.status === "DIVERTED" && (
+                <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-sm font-medium border border-red-500/30">
+                  DIVERTED
+                </span>
+              )}
             </div>
-            <p className="text-muted-foreground">{flight.airline} • Gate {flight.gateId ? `G${flight.gateId}` : "Unassigned"}</p>
+            <p className="text-muted-foreground">
+              {flight.airline} • Gate {gateDisplay}
+            </p>
           </div>
 
           <div className="flex gap-3">
@@ -126,19 +131,17 @@ export default function FlightAnalysis() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Reset
             </Button>
-            
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Panel: Controls & Key Metrics */}
+          {/* Left Panel */}
           <div className="lg:col-span-3 space-y-6">
             <div className="glass-card p-6 rounded-xl space-y-6">
               <h3 className="font-bold text-white flex items-center gap-2">
                 <Clock className="w-4 h-4 text-primary" />
                 Scenario Inputs
               </h3>
-              
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Arrival Delay (minutes)</Label>
@@ -149,20 +152,17 @@ export default function FlightAnalysis() {
                     className="bg-black/20 border-white/10 text-white"
                   />
                 </div>
-                
                 <div className="pt-4 border-t border-white/10 space-y-4">
                   <div>
                     <span className="text-sm text-muted-foreground">Predicted TAT</span>
                     <div className="text-3xl font-display font-bold text-white">{currentTat} min</div>
                   </div>
-                  
                   <div>
                     <span className="text-sm text-muted-foreground">Penalty Risk</span>
                     <div className={`text-2xl font-display font-bold ${currentRisk > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                       ₹{currentRisk.toLocaleString()}
                     </div>
                   </div>
-
                   {bottleneck && (
                     <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                       <div className="flex items-center gap-2 text-amber-400 font-bold text-sm mb-1">
@@ -170,8 +170,19 @@ export default function FlightAnalysis() {
                         Bottleneck: {bottleneck}
                       </div>
                       <p className="text-xs text-amber-300/80">
-                        Expedite {bottleneck.toLowerCase()} crew to save approx 5-10 mins.
+                        {bottleneck === "FUEL"
+                          ? flight.status === "DIVERTED"
+                            ? "Manual bowser fuelling in effect. ₹15,000/min penalty accruing."
+                            : "Manual bowser assigned (Bowser 4). Queue delay affecting TAT."
+                          : `Expedite ${bottleneck.toLowerCase()} crew to save approx 5-10 mins.`}
                       </p>
+                    </div>
+                  )}
+                  {/* Show penalty rate for international */}
+                  {flight.status === "DIVERTED" && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <p className="text-xs text-red-400 font-bold">₹15,000 / min penalty</p>
+                      <p className="text-xs text-red-300/70 mt-0.5">International diversion rate</p>
                     </div>
                   )}
                 </div>
@@ -179,14 +190,13 @@ export default function FlightAnalysis() {
             </div>
           </div>
 
-          {/* Center Panel: Process Breakdown */}
+          {/* Center Panel */}
           <div className="lg:col-span-5 space-y-6">
             <div className="glass-card p-6 rounded-xl h-full flex flex-col">
               <h3 className="font-bold text-white flex items-center gap-2 mb-6">
                 <BarChart2 className="w-4 h-4 text-primary" />
                 Sub-Process Breakdown
               </h3>
-              
               <div className="flex-1 w-full min-h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={processData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
@@ -202,7 +212,6 @@ export default function FlightAnalysis() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-
               <div className="mt-4 grid grid-cols-2 gap-4">
                 {processData.map((item) => (
                   <div key={item.name} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
@@ -225,7 +234,6 @@ export default function FlightAnalysis() {
                 Monte Carlo Simulation
               </h3>
               <p className="text-xs text-muted-foreground mb-6">Distribution of 1,000 simulated scenarios based on current variables.</p>
-              
               {mcData ? (
                 <div className="flex-1">
                   <div className="h-[200px] w-full mb-6">
@@ -249,7 +257,6 @@ export default function FlightAnalysis() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
                       <span className="text-sm text-emerald-400 font-medium">P50 (Median)</span>
